@@ -1,42 +1,121 @@
 #include <Adafruit_CircuitPlayground.h>
 #include <AsyncDelay.h>
 
-volatile bool decFlag;
-volatile bool incFlag;
-volatile bool switchFlag;
+// Volatile Variables
+volatile bool leftFlag = 0;
+volatile bool rightFlag = 0;
 
-AsyncDelay delay_2s; //How long should I run timer for?
+// Variables
+bool setState;
+int gameRand;
+int score;
+int lightCheck;
+int soundValue;
+
+AsyncDelay delay_2s; // 2 second long timer setup
 
 void setup() {
   Serial.begin(9600);
   CircuitPlayground.begin();
-  attachInterrupt(digitalPinToInterrupt(4), decISR, FALLING);
-  attachInterrupt(digitalPinToInterrupt(5), incISR, FALLING);
-  attachInterrupt(digitalPinToInterrupt(7), gameSwitch, CHANGE);
-}
+  delay_2s.start(2000, AsyncDelay::MILLIS);
 
-// Challenge functions? make it a bop it?
-// Have difficulty settings that can be changed before starting the game?
-// Show points upon failure using lights? Make noise on failure? on success?
-// light in a circle, press button to stop at right spot? Different speeds and locations?
-// Creeping lights from middle, press both buttons together
-// March, full lights on left, press left button, then right, then left (left, right, left, with noise?)
-// Yell, lights up, moves forward when it detects a loud enough noise
-// rand function and AsyncDelay are your friends
-// timed switch function where default case is failure? Would have to use multiple switch functions for each challenge functions
+  // Interrupts
+  attachInterrupt(digitalPinToInterrupt(4), leftISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(5), rightISR, FALLING);
+}
 
 void loop() {
-
+  CircuitPlayground.clearPixels();
+  // Start game by pressing left button
+  if(leftFlag || setState) {
+    leftFlag = 0;
+    setState = 0;
+    gameRand = random(0, 2); // Randomly choose task
+    if(gameRand == 0) {
+      creeping();
+    }
+    if(gameRand == 1) {
+      snap();
+    }
+  }
 }
 
-void decISR() {
-  decFlag = 0;
+void creeping() { // Creeping lights from middle, press right button to continue
+  delay_2s.start(2000, AsyncDelay::MILLIS);
+  volatile bool creepState = 1;
+
+  int j = 4;
+  for(int i = 0; i < 3; i++) {
+    // Lights
+    CircuitPlayground.setPixelColor(i, 255, 255, 0);
+    CircuitPlayground.setPixelColor(i+5, 255, 255, 0);
+    CircuitPlayground.setPixelColor(j, 255, 255, 0);
+    CircuitPlayground.setPixelColor(j+5, 255, 255, 0);
+    j--;
+
+    if(rightFlag && creepState) { // Success condition
+      score++;
+      rightFlag = 0;
+      creepState = 0;
+      setState = 1;
+      loop(); // Return to loop for next task
+    }
+
+    else if(delay_2s.isExpired()) { // Failure condition
+      creepState = 0;
+      failure();
+    }
+    delay(1000);
+  }
 }
 
-void incISR() {
-  incFlag = 0;
+void snap() { // Lights up, make loud enough noise to continue
+  delay_2s.start(2000, AsyncDelay::MILLIS);
+  volatile bool snapState = 1;
+
+  while(snapState) { // loop task for 2 seconds
+    for(int i = 0; i < 10; i++) {
+      CircuitPlayground.setPixelColor(i, 0, 255, 255); // Set Lights
+    }
+
+    soundValue = CircuitPlayground.mic.soundPressureLevel(10); // Read sound level
+
+    if(soundValue > 95) { // Success conditon
+      score++;
+      snapState = 0;
+      setState = 1;
+      loop(); // Return to loop for next task
+    }
+
+    else if(delay_2s.isExpired()) { // Failure condition
+      snapState = 0;
+      failure();
+      return;
+    }
+  }
 }
 
-void gameSwitch() {
-  swtichFlag = 0;
+void failure() { // Function for when player fails task
+  Serial.println(score); // Print score to player
+  score = 0; // Reset score
+
+  // Flash red lights to show player failed
+  for(int j = 0; j < 3; j++) {
+    for(int i = 0; i < 10; i++) {
+      CircuitPlayground.setPixelColor(i, 255, 0, 0); // Set lights red
+    }
+    delay(100);
+
+    CircuitPlayground.clearPixels(); // Clear lights to show flash effect
+    delay(100);
+  }
+  loop();
+}
+
+void leftISR() { // Left button ISR
+  leftFlag = 1;
+}
+
+void rightISR() { // Right button ISR
+  rightFlag = 1;
 }
